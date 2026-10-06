@@ -35,5 +35,18 @@ class Settings(BaseSettings):
 
     CHUNK_SIZE_PALABRAS: int = 600
 
+    # SharePoint (Microsoft Graph). Sin secret se entra como el usuario (navegador);
+    # con GRAPH_CLIENT_SECRET, como aplicación.
+    GRAPH_TENANT_ID: str = ""
+    GRAPH_CLIENT_ID: str = ""
+    GRAPH_CLIENT_SECRET: str = ""
+    GRAPH_TOKEN_CACHE: Path = RAIZ_PROYECTO / "salida" / ".graph_token_cache.json"
+    SHAREPOINT_SITIO: str = "amshenllp.sharepoint.com:/teams/Matters"
+    SHAREPOINT_CARPETA_CASOS: str = "Matters"
+    # Archivos de la carpeta del caso que no son documentos: los JSONL que se suben ahí.
+    SHAREPOINT_IGNORAR: list[str] = ["Claude-*.jsonl"]
+    # Donde queda el informe de cada validación (.txt legible y .json con el detalle).
+    VALIDACIONES_DIR: Path = RAIZ_PROYECTO / "salida" / "validaciones"
+
 
 settings = Settings()

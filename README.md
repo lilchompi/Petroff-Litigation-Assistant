@@ -108,7 +108,34 @@ uvicorn app.main:app --reload --port 8000
 
 La documentación interactiva Swagger estará disponible en `http://localhost:8000/docs`.
 
-### 5. Linter
+### 5. Validar que un JSONL tenga todos los archivos de SharePoint
+```bash
+python -m scripts.validar_sharepoint
+```
+
+Compara por `id` cada `.jsonl` de `data/` con la carpeta de su caso en SharePoint. Si un JSONL
+trae varios casos, valida cada uno contra su carpeta de `Matters/` (en vivo, solo
+lectura) y dice qué archivos faltan, agrupados por carpeta. También avisa de los que sobran,
+se movieron o renombraron, cambiaron de tamaño o quedaron sin leer. Se puede pasar un
+archivo concreto y `--caso "<carpeta del caso>"` si el JSONL no lo indica. Termina con
+código 1 si falta algo.
+
+Necesita `GRAPH_TENANT_ID` y `GRAPH_CLIENT_ID` en el `.env`. La primera vez abre el
+navegador para iniciar sesión con la cuenta de @petroffamshen.com.
+
+Si la carpeta cambió de nombre (por ejemplo, al cerrarse el caso se le añade `Closed`), la
+encuentra ignorando el estado o por el número del caso, siempre que haya una sola que encaje.
+
+Los archivos se emparejan solo por `id` de SharePoint, que cada línea del JSONL debe traer
+(las que no, se informan como "sin id" y la validación sale incompleta). Cada informe queda
+guardado en `salida/validaciones/<jsonl>__<fecha>.txt` (legible) y `.json` (detalle).
+
+### 6. Pruebas
+```bash
+python -m pytest
+```
+
+### 7. Linter
 ```bash
 ruff check .
 ```
@@ -125,6 +152,15 @@ La configuración está en `pyproject.toml`. Entre otras, detecta imports y vari
 
 * **`POST /api/limpiar-e-ingerir`**:
   Ejecuta las 5 reglas sobre `data/pruebaocr.jsonl` (o la ruta enviada en `ruta_jsonl`), crea `salida/pruebaocr_limpio.jsonl`, fragmenta en chunks y guarda en la base vectorial. Devuelve 404 si el archivo no existe.
+  Con `"validar_sharepoint": true` antes comprueba que el JSONL tenga todos los archivos del
+  caso en SharePoint y lo añade a la respuesta (no detiene la ingesta).
+* **`POST /api/validar-sharepoint`**:
+  Compara el JSONL (`ruta_jsonl`) con la carpeta del caso (`caso`, o la que indica el JSONL)
+  por `id` y devuelve los archivos que faltan agrupados por carpeta. Con `?formato=texto`
+  devuelve el informe legible. El informe queda guardado en `salida/validaciones/`.
+  ```json
+  { "ruta_jsonl": "data/Allard_500291.jsonl" }
+  ```
 * **`POST /api/consulta`**:
   Consulta semántica al Agente Claude. Con `?formato=texto` devuelve solo el dictamen en texto plano.
   ```json

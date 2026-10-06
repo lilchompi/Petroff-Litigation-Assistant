@@ -23,8 +23,27 @@ class ConsultaRequest(BaseModel):
     top_k: int = Field(TOP_K_POR_DEFECTO, ge=TOP_K_MINIMO, le=TOP_K_MAXIMO)
 
 
+CASO_DE_EJEMPLO = "Adeyemi - Closed - 601243 - 0"
+
+
 class IngestaRequest(BaseModel):
     ruta_jsonl: str | None = Field(
         None,
         description="Ruta absoluta al archivo JSONL. Por defecto usa data/pruebaocr.jsonl",
+    )
+    validar_sharepoint: bool = Field(
+        False,
+        description="Antes de ingerir, comprueba que el JSONL tenga todos los archivos del "
+        "caso en SharePoint y lo incluye en la respuesta. No detiene la ingesta.",
+    )
+
+
+class ValidacionRequest(BaseModel):
+    ruta_jsonl: str | None = Field(
+        None, description="Ruta al JSONL. Por defecto, INPUT_JSONL del .env"
+    )
+    caso: str | None = Field(
+        None,
+        description="Carpeta del caso en SharePoint. Por defecto, la que indica el JSONL.",
+        examples=[CASO_DE_EJEMPLO],
     )

@@ -1,0 +1,42 @@
+[project]
+name = "rag-petroff-app"
+version = "1.0.0"
+description = "Limpieza OCR, búsqueda vectorial y Agente Legal Claude para Petroff Amshen LLP."
+requires-python = ">=3.11"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = [".venv", "data", "salida"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",   # pycodestyle
+    "F",        # pyflakes: imports y variables sin usar
+    "I",        # orden de imports
+    "N",        # convenciones de nombres
+    "UP",       # sintaxis moderna de Python
+    "B",        # bugs probables
+    "SIM",      # simplificaciones
+    "C90",      # complejidad ciclomática
+    "PL",       # pylint (incluye PLR2004: números mágicos)
+    "ERA",      # código comentado
+    "ARG",      # argumentos sin usar
+    "RET",      # retornos innecesarios
+    "PTH",      # pathlib en lugar de os.path
+    "T20",      # print fuera de los scripts
+    "RUF",
+]
+ignore = [
+    "RUF001", "RUF002", "RUF003",  # caracteres Unicode legítimos en textos en español (•, §, ¿)
+]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 8
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/*" = ["T201"]
+"app/llm/prompts.py" = ["E501"]  # prompt en lenguaje natural; sus líneas largas son intencionales
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "scripts"]

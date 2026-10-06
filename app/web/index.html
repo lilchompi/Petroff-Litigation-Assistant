@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Petroff Amshen LLP - Asistente Jurídico</title>
+    <style>
+        :root {
+            --primario: #1e3a5f;
+            --primario-oscuro: #152942;
+            --encabezado-inicio: #102a43;
+            --fondo: #f4f6f9;
+            --tarjeta: #ffffff;
+            --texto: #2d3748;
+            --texto-secundario: #cbd5e1;
+            --borde: #d1d5db;
+            --borde-suave: #e2e8f0;
+            --fondo-resultado: #fafbfc;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--fondo);
+            color: var(--texto);
+            margin: 0;
+            padding: 24px;
+        }
+        .contenedor { max-width: 900px; margin: 0 auto; }
+        header {
+            background: linear-gradient(135deg, var(--encabezado-inicio), var(--primario));
+            color: white;
+            padding: 28px;
+            border-radius: 12px;
+            margin-bottom: 24px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+        }
+        header h1 { margin: 0 0 6px 0; font-size: 24px; }
+        header p { margin: 0; color: var(--texto-secundario); font-size: 14px; }
+        .tarjeta {
+            background: var(--tarjeta);
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+            margin-bottom: 24px;
+        }
+        .tarjeta h3 { margin-top: 0; color: var(--primario); }
+        .oculto { display: none; }
+        label { font-weight: 600; display: block; margin-bottom: 8px; font-size: 14px; }
+        input, textarea {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid var(--borde);
+            border-radius: 8px;
+            font-size: 15px;
+            box-sizing: border-box;
+            margin-bottom: 16px;
+        }
+        button {
+            background: var(--primario);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 15px;
+            font-weight: 600;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        button:hover { background: var(--primario-oscuro); }
+        #fuentes { margin-bottom: 16px; }
+        #resultado {
+            line-height: 1.7;
+            white-space: pre-wrap;
+            font-size: 15px;
+            background: var(--fondo-resultado);
+            border: 1px solid var(--borde-suave);
+            padding: 24px;
+            border-radius: 8px;
+        }
+        .etiqueta-fuente {
+            display: inline-block;
+            background: var(--borde-suave);
+            padding: 4px 10px;
+            border-radius: 16px;
+            font-size: 12px;
+            margin: 0 8px 8px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="contenedor">
+        <header>
+            <h1>Petroff Amshen LLP</h1>
+            <p>Sistema Especializado de Consulta Jurídica y Retrieval Semántico</p>
+        </header>
+
+        <div class="tarjeta">
+            <label for="caso">Expediente o Caso:</label>
+            <input type="text" id="caso" value="Morris" placeholder="Ej. Morris, Sheepshead Bay, Paradis...">
+
+            <label for="pregunta">Pregunta Jurídica:</label>
+            <textarea id="pregunta" rows="3">¿Qué orden dictó la corte en el caso Morris y qué requerimientos impuso al banco M&T?</textarea>
+
+            <button id="botonConsultar">Consultar Dictamen</button>
+        </div>
+
+        <div class="tarjeta oculto" id="tarjetaResultado">
+            <h3>Dictamen Legal</h3>
+            <div id="fuentes"></div>
+            <div id="resultado"></div>
+        </div>
+    </div>
+
+    <script>
+        const TEXTO_BOTON = 'Consultar Dictamen';
+        const TEXTO_BOTON_CARGANDO = 'Analizando expediente...';
+        const TEXTO_CARGANDO = 'Consultando base documental...';
+
+        const boton = document.getElementById('botonConsultar');
+        const tarjetaResultado = document.getElementById('tarjetaResultado');
+        const resultado = document.getElementById('resultado');
+        const fuentes = document.getElementById('fuentes');
+
+        function crearEtiquetaFuente(fuente) {
+            const etiqueta = document.createElement('span');
+            etiqueta.className = 'etiqueta-fuente';
+            const porcentaje = (fuente.similitud * 100).toFixed(1);
+            etiqueta.textContent = `📄 ${fuente.archivo} (Similitud: ${porcentaje}%)`;
+            return etiqueta;
+        }
+
+        function mostrarFuentes(listaFuentes) {
+            fuentes.replaceChildren();
+            if (!listaFuentes || !listaFuentes.length) return;
+            const titulo = document.createElement('strong');
+            titulo.textContent = 'Fuentes identificadas:';
+            fuentes.append(titulo, document.createElement('br'), ...listaFuentes.map(crearEtiquetaFuente));
+        }
+
+        function marcarCargando(cargando) {
+            boton.disabled = cargando;
+            boton.textContent = cargando ? TEXTO_BOTON_CARGANDO : TEXTO_BOTON;
+        }
+
+        async function consultarDictamen() {
+            marcarCargando(true);
+            tarjetaResultado.classList.remove('oculto');
+            resultado.textContent = TEXTO_CARGANDO;
+            fuentes.replaceChildren();
+
+            try {
+                const respuesta = await fetch('/api/consulta', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        pregunta: document.getElementById('pregunta').value,
+                        caso: document.getElementById('caso').value,
+                    }),
+                });
+                const datos = await respuesta.json();
+                mostrarFuentes(datos.fuentes);
+                resultado.textContent = datos.respuesta;
+            } catch (error) {
+                resultado.textContent = 'Error al consultar: ' + error;
+            } finally {
+                marcarCargando(false);
+            }
+        }
+
+        boton.addEventListener('click', consultarDictamen);
+    </script>
+</body>
+</html>

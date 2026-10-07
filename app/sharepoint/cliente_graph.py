@@ -28,7 +28,7 @@ ALCANCES_APLICACION = ["https://graph.microsoft.com/.default"]
 TIMEOUT_SEGUNDOS = 60
 MAX_INTENTOS = 6
 ESPERA_MAXIMA_SEGUNDOS = 60
-CAMPOS_ITEM = "id,name,size,folder,file,webUrl"
+CAMPOS_ITEM = "id,name,size,folder,file,webUrl,lastModifiedDateTime"
 ELEMENTOS_POR_PAGINA = 999
 ESTADOS_REINTENTABLES = {HTTPStatus.TOO_MANY_REQUESTS, HTTPStatus.SERVICE_UNAVAILABLE}
 # Los casos se llaman '<cliente> - [Closed - ]<número> - <índice>'.

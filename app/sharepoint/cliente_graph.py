@@ -53,6 +53,10 @@ class ConflictoError(SharePointError):
     """Ya existe un elemento con ese nombre en la carpeta (HTTP 409)."""
 
 
+class SesionCaducadaError(SharePointError):
+    """La sesión guardada no se pudo renovar y no se permite abrir el navegador."""
+
+
 class SoloLecturaError(SharePointError):
     """Se intentó escribir con un cliente creado en modo lectura."""
 
@@ -72,7 +76,9 @@ class ArchivoSharePoint:
 
 
 class ClienteGraph:
-    def __init__(self, escritura: bool = False) -> None:
+    def __init__(self, escritura: bool = False, interactivo: bool = True) -> None:
+        """interactivo=False: nunca abre el navegador (tareas desatendidas). Si la sesión
+        guardada no se puede renovar sola, falla con SesionCaducadaError."""
         if not (settings.GRAPH_TENANT_ID and settings.GRAPH_CLIENT_ID):
             raise SharePointNoConfiguradoError(
                 "Faltan GRAPH_TENANT_ID y GRAPH_CLIENT_ID en el .env (ver .env.example)."
@@ -85,6 +91,7 @@ class ClienteGraph:
         self._app: msal.ClientApplication | None = None
         self._cache: msal.SerializableTokenCache | None = None
         self._escritura = escritura
+        self._interactivo = interactivo
         self._alcances = ALCANCES_ESCRITURA if escritura else ALCANCES_DELEGADOS
 
     # ------------------------------------------------------------------ autenticación
@@ -118,6 +125,12 @@ class ClienteGraph:
             resultado = app.acquire_token_silent(self._alcances, account=cuentas[0])
             if resultado:
                 return resultado
+        if not self._interactivo:
+            raise SesionCaducadaError(
+                "La sesión de Microsoft guardada caducó y esta tarea no puede abrir el "
+                "navegador. Ejecuta a mano: .venv\\Scripts\\python.exe -m scripts.vigilar_jsonl "
+                "--iniciar-sesion"
+            )
         logger.warning("Abriendo el navegador: elige tu cuenta de @petroffamshen.com.")
         return app.acquire_token_interactive(scopes=self._alcances, prompt="select_account")
 

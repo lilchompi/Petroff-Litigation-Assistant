@@ -28,6 +28,11 @@ def _argumentos() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--umbral", type=int, default=100, help="JSONL nuevos para generar plan")
     parser.add_argument("--marcar-hasta", help="Fecha ISO: marcar como revisados los anteriores")
+    parser.add_argument(
+        "--iniciar-sesion",
+        action="store_true",
+        help="Abre el navegador para renovar la sesión de Microsoft (si la tarea avisa que caducó)",
+    )
     return parser.parse_args()
 
 
@@ -38,7 +43,12 @@ def _a_utc(fecha: str) -> datetime:
 
 def main() -> int:
     args = _argumentos()
-    cliente = ClienteGraph()
+    # Sin navegador: corre desatendido. Si la sesión caducó, falla y lo dice.
+    cliente = ClienteGraph(interactivo=args.iniciar_sesion)
+    if args.iniciar_sesion:
+        cliente.carpetas_de_casos()
+        print("Sesión de Microsoft renovada.")
+        return 0
     registro = Registro()
     remotos = listar_jsonl(cliente, settings.SHAREPOINT_CARPETAS_JSONL)
 

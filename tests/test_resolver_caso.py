@@ -2,7 +2,7 @@
 
 import pytest
 
-from app.sharepoint import CasoNoEncontradoError, ClienteGraph
+from app.sharepoint import CasoNoEncontradoError, ClienteGraph, SesionCaducadaError
 
 CARPETAS = [
     "Alvarez, Brianna - Closed - 400029 - 0",
@@ -42,3 +42,13 @@ def test_no_adivina_si_hay_varias_con_el_mismo_numero(cliente):
 def test_caso_inexistente(cliente):
     with pytest.raises(CasoNoEncontradoError, match="No existe la carpeta"):
         cliente.resolver_caso("Nadie - 123456 - 0")
+
+
+def test_sin_navegador_falla_en_vez_de_quedarse_esperando(monkeypatch):
+    monkeypatch.setattr("app.core.config.settings.GRAPH_TENANT_ID", "t")
+    monkeypatch.setattr("app.core.config.settings.GRAPH_CLIENT_ID", "c")
+    monkeypatch.setattr("app.core.config.settings.GRAPH_CLIENT_SECRET", "")
+    cliente = ClienteGraph(interactivo=False)
+    cliente._app = type("SinCuentas", (), {"get_accounts": lambda _self: []})()
+    with pytest.raises(SesionCaducadaError):
+        cliente._pedir_token()

@@ -4,14 +4,18 @@ from app.sharepoint.cliente_graph import (
     ArchivoSharePoint,
     CasoNoEncontradoError,
     ClienteGraph,
+    ConflictoError,
     SharePointError,
     SharePointNoConfiguradoError,
+    SoloLecturaError,
 )
 
 __all__ = [
     "ArchivoSharePoint",
     "CasoNoEncontradoError",
     "ClienteGraph",
+    "ConflictoError",
     "SharePointError",
     "SharePointNoConfiguradoError",
+    "SoloLecturaError",
 ]

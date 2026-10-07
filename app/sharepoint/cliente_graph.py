@@ -22,6 +22,8 @@ logger = logging.getLogger(__name__)
 
 GRAPH = "https://graph.microsoft.com/v1.0"
 ALCANCES_DELEGADOS = ["Sites.Read.All"]
+# Solo para aplicar un plan de revisión (renombrar, mover, crear carpetas).
+ALCANCES_ESCRITURA = ["Sites.ReadWrite.All"]
 ALCANCES_APLICACION = ["https://graph.microsoft.com/.default"]
 TIMEOUT_SEGUNDOS = 60
 MAX_INTENTOS = 6
@@ -47,6 +49,14 @@ class CasoNoEncontradoError(SharePointError):
     """La carpeta del caso no existe en SharePoint."""
 
 
+class ConflictoError(SharePointError):
+    """Ya existe un elemento con ese nombre en la carpeta (HTTP 409)."""
+
+
+class SoloLecturaError(SharePointError):
+    """Se intentó escribir con un cliente creado en modo lectura."""
+
+
 @dataclass(frozen=True)
 class ArchivoSharePoint:
     id: str
@@ -62,7 +72,7 @@ class ArchivoSharePoint:
 
 
 class ClienteGraph:
-    def __init__(self) -> None:
+    def __init__(self, escritura: bool = False) -> None:
         if not (settings.GRAPH_TENANT_ID and settings.GRAPH_CLIENT_ID):
             raise SharePointNoConfiguradoError(
                 "Faltan GRAPH_TENANT_ID y GRAPH_CLIENT_ID en el .env (ver .env.example)."
@@ -74,6 +84,8 @@ class ClienteGraph:
         self._sesion = requests.Session()
         self._app: msal.ClientApplication | None = None
         self._cache: msal.SerializableTokenCache | None = None
+        self._escritura = escritura
+        self._alcances = ALCANCES_ESCRITURA if escritura else ALCANCES_DELEGADOS
 
     # ------------------------------------------------------------------ autenticación
 
@@ -103,11 +115,11 @@ class ClienteGraph:
             return app.acquire_token_for_client(scopes=ALCANCES_APLICACION)
         cuentas = app.get_accounts()
         if cuentas:
-            resultado = app.acquire_token_silent(ALCANCES_DELEGADOS, account=cuentas[0])
+            resultado = app.acquire_token_silent(self._alcances, account=cuentas[0])
             if resultado:
                 return resultado
         logger.warning("Abriendo el navegador: elige tu cuenta de @petroffamshen.com.")
-        return app.acquire_token_interactive(scopes=ALCANCES_DELEGADOS, prompt="select_account")
+        return app.acquire_token_interactive(scopes=self._alcances, prompt="select_account")
 
     def _obtener_token(self, renovar: bool = False) -> str:
         with self._candado:
@@ -127,28 +139,34 @@ class ClienteGraph:
 
     # ------------------------------------------------------------------ HTTP
 
-    def _get(self, url: str) -> dict:
-        """GET a Graph con reintentos ante throttling y un token renovado ante 401."""
+    def _pedir(self, metodo: str, url: str, cuerpo: dict | None = None) -> dict:
+        """Llamada a Graph con reintentos ante throttling y un token renovado ante 401."""
         destino = url if url.startswith("http") else f"{GRAPH}{url}"
         renovar = False
         for intento in range(MAX_INTENTOS):
             cabeceras = {"Authorization": f"Bearer {self._obtener_token(renovar)}"}
-            respuesta = self._sesion.get(destino, headers=cabeceras, timeout=TIMEOUT_SEGUNDOS)
+            respuesta = self._sesion.request(
+                metodo, destino, headers=cabeceras, json=cuerpo, timeout=TIMEOUT_SEGUNDOS
+            )
             renovar = False
             if respuesta.ok:
-                return respuesta.json()
+                return respuesta.json() if respuesta.content else {}
             if respuesta.status_code == HTTPStatus.UNAUTHORIZED:
                 renovar = True
             elif respuesta.status_code in ESTADOS_REINTENTABLES:
                 espera = int(respuesta.headers.get("Retry-After", 2**intento))
                 time.sleep(min(espera, ESPERA_MAXIMA_SEGUNDOS))
-            elif respuesta.status_code == HTTPStatus.NOT_FOUND:
-                raise CasoNoEncontradoError(f"No existe en SharePoint: {destino}")
             else:
-                raise SharePointError(
-                    f"Graph respondió {respuesta.status_code}: {respuesta.text[:200]}"
-                )
+                _lanzar(respuesta, destino)
         raise SharePointError(f"Graph no respondió tras {MAX_INTENTOS} intentos: {destino}")
+
+    def _get(self, url: str) -> dict:
+        return self._pedir("GET", url)
+
+    def _escribir(self, metodo: str, url: str, cuerpo: dict | None) -> dict:
+        if not self._escritura:
+            raise SoloLecturaError("Este cliente es de solo lectura: créalo con escritura=True.")
+        return self._pedir(metodo, url, cuerpo)
 
     # ------------------------------------------------------------------ carpetas
 
@@ -169,6 +187,69 @@ class ClienteGraph:
             hijos.extend(pagina["value"])
             url = pagina.get("@odata.nextLink", "")
         return hijos
+
+    # ------------------------------------------------------------------ escritura
+
+    def obtener(self, item_id: str) -> dict:
+        """El elemento con su nombre y su carpeta padre (parentReference.id)."""
+        return self._get(
+            f"/drives/{self._drive()}/items/{item_id}?$select=id,name,parentReference,folder"
+        )
+
+    def hijos(self, item_id: str) -> list[dict]:
+        return self._hijos(item_id)
+
+    def eliminar(self, item_id: str) -> None:
+        """Manda el elemento a la papelera de reciclaje del sitio (no es un borrado definitivo)."""
+        self._escribir("DELETE", f"/drives/{self._drive()}/items/{item_id}", None)
+
+    def renombrar(self, item_id: str, nombre: str) -> dict:
+        return self._escribir(
+            "PATCH",
+            f"/drives/{self._drive()}/items/{item_id}",
+            {"name": nombre, "@microsoft.graph.conflictBehavior": "fail"},
+        )
+
+    def mover(self, item_id: str, padre_id: str) -> dict:
+        """Mueve dentro de la misma biblioteca: el id y el historial de versiones se conservan."""
+        return self._escribir(
+            "PATCH",
+            f"/drives/{self._drive()}/items/{item_id}",
+            {"parentReference": {"id": padre_id}, "@microsoft.graph.conflictBehavior": "fail"},
+        )
+
+    def crear_carpeta(self, padre_id: str, nombre: str) -> tuple[str, bool]:
+        """(id, creada). Si ya existe una carpeta con ese nombre, devuelve la existente."""
+        existente = next(
+            (h for h in self._hijos(padre_id) if h["name"].casefold() == nombre.casefold()), None
+        )
+        if existente is not None:
+            return existente["id"], False
+        nueva = self._escribir(
+            "POST",
+            f"/drives/{self._drive()}/items/{padre_id}/children",
+            {"name": nombre, "folder": {}, "@microsoft.graph.conflictBehavior": "fail"},
+        )
+        return nueva["id"], True
+
+    def descargar(self, item_id: str) -> bytes:
+        cabeceras = {"Authorization": f"Bearer {self._obtener_token()}"}
+        respuesta = self._sesion.get(
+            f"{GRAPH}/drives/{self._drive()}/items/{item_id}/content",
+            headers=cabeceras,
+            timeout=TIMEOUT_SEGUNDOS,
+        )
+        if not respuesta.ok:
+            _lanzar(respuesta, item_id)
+        return respuesta.content
+
+    def hijos_de_ruta(self, ruta: str) -> list[dict]:
+        """Los elementos de una carpeta de la biblioteca, por su ruta ('JSONL/Casos_rafael')."""
+        carpeta = self._get(f"/drives/{self._drive()}/root:/{quote(ruta)}")
+        return self._hijos(carpeta["id"])
+
+    def carpetas_de_casos(self) -> dict[str, str]:
+        return self._carpetas_de_casos()
 
     def _carpetas_de_casos(self) -> dict[str, str]:
         """{nombre: id} de cada carpeta de caso en SHAREPOINT_CARPETA_CASOS. Se pide una vez."""
@@ -214,8 +295,12 @@ class ClienteGraph:
                 f"No existe la carpeta '{caso}' en {settings.SHAREPOINT_CARPETA_CASOS}/"
             )
 
+        return self.listar_carpeta(carpetas[caso])
+
+    def listar_carpeta(self, carpeta_id: str) -> list[ArchivoSharePoint]:
+        """Todos los archivos bajo una carpeta, por su id, recorriendo sus subcarpetas."""
         archivos: list[ArchivoSharePoint] = []
-        pendientes = [(carpetas[caso], "")]
+        pendientes = [(carpeta_id, "")]
         while pendientes:
             item_id, carpeta = pendientes.pop()
             for hijo in self._hijos(item_id):
@@ -242,6 +327,14 @@ def _numero_de_caso(caso: str) -> str:
     return next(
         (p for p in _partes(caso) if p.isdigit() and len(p) >= LARGO_MINIMO_NUMERO_CASO), ""
     )
+
+
+def _lanzar(respuesta: requests.Response, destino: str) -> None:
+    if respuesta.status_code == HTTPStatus.NOT_FOUND:
+        raise CasoNoEncontradoError(f"No existe en SharePoint: {destino}")
+    if respuesta.status_code == HTTPStatus.CONFLICT:
+        raise ConflictoError(f"Ya existe un elemento con ese nombre: {respuesta.text[:200]}")
+    raise SharePointError(f"Graph respondió {respuesta.status_code}: {respuesta.text[:200]}")
 
 
 def _archivo_desde_item(item: dict, carpeta: str) -> ArchivoSharePoint:

@@ -118,6 +118,18 @@ def validar_jsonl_contra_sharepoint(
 
     cliente = cliente or ClienteGraph()
     validacion = ValidacionJsonl(ruta_jsonl=ruta_jsonl, lineas_sin_caso=len(sin_caso))
+    if inventario.id_carpeta and not caso:
+        # Formato por caso: la cabecera dice exactamente qué carpeta es, por su id.
+        real = cliente.obtener(inventario.id_carpeta)["name"]
+        resultado = comparar(
+            real,
+            cliente.listar_carpeta(inventario.id_carpeta),
+            inventario.archivos,
+            ignorar=settings.SHAREPOINT_IGNORAR,
+        )
+        validacion.resultados.append(resultado)
+        guardar_informe(validacion)
+        return validacion
     for real, (nombres, archivos) in _agrupar_por_carpeta_real(
         grupos, cliente, validacion.errores
     ).items():

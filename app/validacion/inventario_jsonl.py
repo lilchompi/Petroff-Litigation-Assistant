@@ -4,6 +4,9 @@ Acepta los dos formatos que salen del extractor:
 - con cabecera: la primera línea trae `matter` y el resto son documentos;
 - sin cabecera: cada línea trae `id` y `caso`.
 
+El id del archivo en SharePoint viene como `sharepoint_id` (formato por caso) o `id`. La
+cabecera del formato por caso trae además `sharepoint_folder_id`, el id de la carpeta.
+
 Un JSONL puede traer VARIOS casos (los diarios por partes los mezclan): el caso de cada
 línea sale de su `caso`, o de su `origen`, o de la cabecera.
 
@@ -20,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from app.core.config import settings
+from app.revision.indices import indices_de_caratula
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +45,8 @@ class ArchivoJsonl:
     hash: str
     leido: bool
     motivo_no_leido: str
+    # Index de corte de la carátula del documento (sin el texto, que no se guarda).
+    indices_caratula: frozenset[str] = frozenset()
 
     @property
     def ruta(self) -> str:
@@ -53,6 +59,11 @@ class InventarioJsonl:
     cabecera: dict[str, Any] | None = None
     archivos: list[ArchivoJsonl] = field(default_factory=list)
     lineas_invalidas: int = 0
+
+    @property
+    def id_carpeta(self) -> str | None:
+        """El id de SharePoint de la carpeta del caso, si la cabecera lo trae."""
+        return (self.cabecera or {}).get("sharepoint_folder_id") or None
 
     def por_caso(self) -> dict[str | None, list[ArchivoJsonl]]:
         """Los archivos agrupados por caso, en el orden en que aparecen. None = sin caso."""
@@ -116,13 +127,14 @@ def _archivo(registro: dict[str, Any], linea: int, cabecera: dict | None) -> Arc
     return ArchivoJsonl(
         linea=linea,
         caso=_caso(registro, cabecera),
-        id=_texto(registro.get("id")) or None,
+        id=_texto(registro.get("sharepoint_id")) or _texto(registro.get("id")) or None,
         carpeta=_carpeta(registro),
         nombre=_texto(registro.get("file_name")),
         tamano_mb=_como_float(registro.get("size_mb")),
         hash=_texto(registro.get("hash")),
         leido=_como_bool(registro.get("was_read")),
         motivo_no_leido=_texto(registro.get("not_read_because")),
+        indices_caratula=indices_de_caratula(_texto(registro.get("extracted_text"))),
     )
 
 

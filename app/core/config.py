@@ -47,6 +47,14 @@ class Settings(BaseSettings):
     SHAREPOINT_IGNORAR: list[str] = ["Claude-*.jsonl"]
     # Donde queda el informe de cada validación (.txt legible y .json con el detalle).
     VALIDACIONES_DIR: Path = RAIZ_PROYECTO / "salida" / "validaciones"
+    # Revisión de calidad: planes, hallazgos y diarios de respaldo de lo aplicado.
+    REVISION_DIR: Path = RAIZ_PROYECTO / "salida" / "revision"
+    # Carpeta de SharePoint (biblioteca Documents) donde llegan los JSONL por caso.
+    SHAREPOINT_CARPETA_JSONL: str = "JSONL/Casos_rafael"
+    # Index que son citas de jurisprudencia y no casos; además, los que salgan en las
+    # carátulas de MINIMO_CASOS_CITA casos distintos del lote.
+    INDEX_CITAS: list[str] = ["15109/2013"]
+    MINIMO_CASOS_CITA: int = 3
 
 
 settings = Settings()

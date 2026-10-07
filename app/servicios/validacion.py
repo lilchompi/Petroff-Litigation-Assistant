@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.sharepoint import CasoNoEncontradoError, ClienteGraph
 from app.validacion import (
     ArchivoJsonl,
+    InventarioJsonl,
     ResultadoValidacion,
     comparar,
     informe_varios_casos,
@@ -46,7 +47,7 @@ class ValidacionJsonl:
 
     def a_dict(self) -> dict:
         return {
-            "jsonl": str(self.ruta_jsonl.resolve()),
+            "jsonl": str(self.ruta_jsonl),
             "completo": self.completo,
             "casos": [r.a_dict() for r in self.resultados],
             "casos_no_encontrados": self.errores,
@@ -68,10 +69,7 @@ def guardar_informe(validacion: ValidacionJsonl) -> None:
         base.with_suffix(".txt"),
         base.with_suffix(".json"),
     )
-    encabezado = (
-        f"JSONL: {validacion.ruta_jsonl.resolve()}\n"
-        f"Fecha: {ahora.isoformat(timespec='seconds')}\n\n"
-    )
+    encabezado = f"JSONL: {validacion.ruta_jsonl}\nFecha: {ahora.isoformat(timespec='seconds')}\n\n"
     validacion.informe_txt.write_text(
         encabezado + validacion.informe() + "\n", encoding=CODIFICACION
     )
@@ -110,7 +108,14 @@ def validar_jsonl_contra_sharepoint(
     Con `caso`, todo el JSONL se compara contra esa carpeta. Lanza FileNotFoundError,
     CasoDesconocidoError o SharePointError.
     """
-    inventario = leer_inventario(ruta_jsonl)
+    return validar_inventario(leer_inventario(ruta_jsonl), caso, cliente)
+
+
+def validar_inventario(
+    inventario: InventarioJsonl, caso: str | None = None, cliente: ClienteGraph | None = None
+) -> ValidacionJsonl:
+    """Lo mismo que validar_jsonl_contra_sharepoint, para un JSONL ya leído (o en memoria)."""
+    ruta_jsonl = inventario.ruta
     grupos = {caso: inventario.archivos} if caso else inventario.por_caso()
     sin_caso = grupos.pop(None, [])
     if not grupos:

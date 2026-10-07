@@ -1,0 +1,47 @@
+# Reglas de la revisión de calidad de Matters/ (app/revision/motor.py).
+#
+# Aquí están los umbrales, listas y filtros que se pueden afinar sin tocar el código.
+# Cada cambio queda en git. La capa del "analista" (LLM) propone cambios a este archivo con
+# su evidencia, y una persona los acepta o los rechaza en un pull request.
+#
+# Las opciones marcadas como CANDIDATA están desactivadas: salieron del análisis de los 83
+# JSONL del 7-oct-2026 y se activan cuando haya evidencia suficiente (o el LLM la confirme).
+
+version = "2026-10-07.1"
+
+[citas]
+# Index que son jurisprudencia citada y no casos de la firma.
+conocidas = ["15109/2013"]
+# Un index que sale en las carátulas de casos de este número de clientes distintos es una cita.
+minimo_clientes = 3
+
+[renombrar]
+# Regla 4: documentos de corte con el mismo index para renombrar una carpeta '- 0' sin
+# preguntar. Con menos, solo se sugiere.
+minimo_documentos = 2
+
+[fusion]
+# Dónde queda, dentro de la carpeta buena, el contenido de la carpeta que se fusiona.
+subcarpeta = "00_Unfiled"
+
+[ruido]
+# CANDIDATA. Un index con un año posterior a (año actual + este número) es un error de OCR.
+# Ejemplo: 6714/2030 en Banni. 0 = desactivado.
+anios_en_el_futuro = 0
+# CANDIDATA. Un index que difiere del de la carpeta en un solo dígito es el mismo, mal leído.
+# Ejemplo: 726562/2022 en Delgado, cuyo index es 725562/2022.
+un_digito_distinto_es_ocr = false
+
+[pendientes]
+# CANDIDATA. "Index sin carpeta" con menos documentos que esto queda como informativo y no
+# como pendiente. 18 de los 45 del 7-oct eran de un solo documento. 1 = todo es pendiente.
+index_sin_carpeta_minimo_documentos = 1
+# CANDIDATA. Un documento que cita otro caso DEL MISMO CLIENTE (un Article 15 que cita el
+# foreclosure que pretende cancelar) queda como informativo, salvo que el nombre del archivo
+# empiece por ese index (descarga de NYSCEF). 93 de los 186 pendientes del 7-oct.
+mismo_cliente_otro_caso_es_informativo = false
+
+[nombres]
+# Nombres que son la misma persona aunque no lo parezcan por sus palabras.
+# Cada grupo es una lista de nombres de cliente tal como aparecen en las carpetas.
+alias = []

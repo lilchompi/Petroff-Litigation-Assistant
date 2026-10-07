@@ -233,15 +233,23 @@ class ClienteGraph:
         return nueva["id"], True
 
     def descargar(self, item_id: str) -> bytes:
-        cabeceras = {"Authorization": f"Bearer {self._obtener_token()}"}
-        respuesta = self._sesion.get(
-            f"{GRAPH}/drives/{self._drive()}/items/{item_id}/content",
-            headers=cabeceras,
-            timeout=TIMEOUT_SEGUNDOS,
-        )
-        if not respuesta.ok:
-            _lanzar(respuesta, item_id)
-        return respuesta.content
+        """El contenido de un archivo, en memoria, con los mismos reintentos que _pedir."""
+        destino = f"{GRAPH}/drives/{self._drive()}/items/{item_id}/content"
+        renovar = False
+        for intento in range(MAX_INTENTOS):
+            cabeceras = {"Authorization": f"Bearer {self._obtener_token(renovar)}"}
+            respuesta = self._sesion.get(destino, headers=cabeceras, timeout=TIMEOUT_SEGUNDOS)
+            renovar = False
+            if respuesta.ok:
+                return respuesta.content
+            if respuesta.status_code == HTTPStatus.UNAUTHORIZED:
+                renovar = True
+            elif respuesta.status_code in ESTADOS_REINTENTABLES:
+                espera = int(respuesta.headers.get("Retry-After", 2**intento))
+                time.sleep(min(espera, ESPERA_MAXIMA_SEGUNDOS))
+            else:
+                _lanzar(respuesta, item_id)
+        raise SharePointError(f"No se pudo descargar {item_id} tras {MAX_INTENTOS} intentos")
 
     def hijos_de_ruta(self, ruta: str) -> list[dict]:
         """Los elementos de una carpeta de la biblioteca, por su ruta ('JSONL/Casos_rafael')."""

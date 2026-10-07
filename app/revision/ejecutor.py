@@ -41,6 +41,7 @@ class Resultado:
     saltadas: list[str] = field(default_factory=list)
     error: str | None = None
     cambios: int = 0
+    aplicadas: list[Accion] = field(default_factory=list)
 
 
 class Diario:
@@ -183,6 +184,8 @@ class Ejecutor:
                 resultado.error = f"{etiqueta}: {error}"
                 break
             resultado.hechas.append(etiqueta)
+            if not self.simular:
+                resultado.aplicadas.append(accion)
         resultado.cambios = self.diario.cambios()
         return resultado
 

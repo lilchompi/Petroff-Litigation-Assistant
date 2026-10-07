@@ -12,8 +12,10 @@ Reglas (ver salida/REGLAS_REVISION_MATTERS.md):
 Lo ambiguo (otros clientes, varios casos en una carpeta) se informa con para_llm=True.
 """
 
+import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
+from datetime import date
 
 from app.revision.indices import es_fragmento_de
 from app.revision.nombres import (
@@ -25,10 +27,11 @@ from app.revision.nombres import (
     nombre_menciona_cliente,
 )
 from app.revision.plan import FUSIONAR, RENOMBRAR, Accion, Hallazgo, Plan
+from app.revision.reglas import Reglas
 from app.validacion.inventario_jsonl import ArchivoJsonl
 
-MINIMO_DOCS_PARA_RENOMBRAR = 2
-SUBCARPETA_FUSION = "00_Unfiled"
+# Así nombra NYSCEF los documentos que se descargan: "710731_2015_Deutsche_v_...".
+NOMBRE_DE_NYSCEF = re.compile(r"^(\d{3,7})_((?:19|20)\d{2})_")
 
 
 @dataclass(frozen=True)
@@ -70,6 +73,7 @@ class Revision:
 
     matters: IndiceMatters
     citas: set[str] = field(default_factory=set)
+    reglas: Reglas = field(default_factory=Reglas)
     plan: Plan = field(default_factory=Plan)
     comprometidas: set[str] = field(default_factory=set)
     # Renombres de la regla 4: se confirman en cerrar(), cuando se conoce todo el lote.
@@ -139,7 +143,7 @@ class Revision:
                     "origen_nombre": origen.titulo,
                     "destino_id": destino.id,
                     "destino_nombre": destino.titulo,
-                    "subcarpeta": [SUBCARPETA_FUSION, subcarpeta],
+                    "subcarpeta": [self.reglas.subcarpeta_fusion, subcarpeta],
                     "eliminar_origen": True,
                 },
                 evidencia,
@@ -162,10 +166,23 @@ class Revision:
         documentos: dict[str, list[ArchivoJsonl]] = defaultdict(list)
         for archivo in archivos:
             for index in archivo.indices_caratula:
-                if index in self.citas or es_fragmento_de(index, propio):
-                    continue
-                documentos[index].append(archivo)
+                if not self._es_ruido(index, propio):
+                    documentos[index].append(archivo)
         return dict(documentos)
+
+    def _es_ruido(self, index: str, propio: str | None) -> bool:
+        if index in self.citas or es_fragmento_de(index, propio):
+            return True
+        anio = int(index.rsplit("/", 1)[-1]) if "/" in index else None
+        limite = self.reglas.anios_en_el_futuro
+        if limite and anio and anio > date.today().year + limite:
+            return True
+        return self.reglas.un_digito_distinto_es_ocr and _un_digito_distinto(index, propio)
+
+    def _mismo_nombre(self, a: NombreCarpeta, b: NombreCarpeta) -> bool:
+        if mismo_nombre(a, b):
+            return True
+        return any({a.cliente, b.cliente} <= grupo for grupo in self.reglas.alias)
 
     def _nombre(self, carpeta: Carpeta) -> None:
         for problema in carpeta.nombre.problemas:
@@ -174,7 +191,7 @@ class Revision:
     def _mismo_id(self, carpeta: Carpeta) -> None:
         """Regla 5: mismo ID interno + mismo nombre."""
         for otra in self.matters.con_id_interno(carpeta):
-            if not mismo_nombre(carpeta.nombre, otra.nombre):
+            if not self._mismo_nombre(carpeta.nombre, otra.nombre):
                 self._hallazgo(
                     "5_id_repetido",
                     carpeta,
@@ -218,7 +235,7 @@ class Revision:
                 "ninguna.",
                 candidatas=[d.titulo for d in destinos],
             )
-        elif mismo_nombre(carpeta.nombre, destinos[0].nombre):
+        elif self._mismo_nombre(carpeta.nombre, destinos[0].nombre):
             self._fusionar(
                 carpeta,
                 destinos[0],
@@ -231,7 +248,7 @@ class Revision:
             self._documentos_de_otro(carpeta, destinos[0], index, documentos)
 
     def _sin_destino(self, carpeta: Carpeta, index: str, documentos: int) -> None:
-        if documentos >= MINIMO_DOCS_PARA_RENOMBRAR:
+        if documentos >= self.reglas.minimo_documentos_para_renombrar:
             self._renombrar(carpeta, index, documentos)
         else:
             self._hallazgo(
@@ -261,6 +278,15 @@ class Revision:
             destinos = self.matters.con_index(index, carpeta)
             if destinos:
                 self._documentos_de_otro(carpeta, destinos[0], index, documentos)
+            elif len(documentos) < self.reglas.index_sin_carpeta_minimo_documentos:
+                self._hallazgo(
+                    "6_index_sin_carpeta_informativo",
+                    carpeta,
+                    f"{len(documentos)} documento(s) citan {index}, que no tiene carpeta "
+                    "(probable cita o acción previa).",
+                    index=index,
+                    documentos=[d.nombre for d in documentos],
+                )
             else:
                 self._hallazgo(
                     "6_index_sin_carpeta",
@@ -272,7 +298,7 @@ class Revision:
                 )
 
     def _mismo_index(self, carpeta: Carpeta, otra: Carpeta, confirmados: int) -> None:
-        if not mismo_nombre(carpeta.nombre, otra.nombre):
+        if not self._mismo_nombre(carpeta.nombre, otra.nombre):
             self._hallazgo(
                 "7_mismo_index_otro_cliente",
                 carpeta,
@@ -302,10 +328,18 @@ class Revision:
         self, carpeta: Carpeta, destino: Carpeta, index: str, documentos: list[ArchivoJsonl]
     ) -> None:
         """Regla 8 si el archivo es del cliente y el index de otro cliente; si no, al LLM."""
-        mismo_cliente = mismo_nombre(carpeta.nombre, destino.nombre)
+        mismo_cliente = self._mismo_nombre(carpeta.nombre, destino.nombre)
         for documento in documentos:
             propio = not mismo_cliente and nombre_menciona_cliente(documento.nombre, carpeta.nombre)
             regla, headline = _tipo_de_documento_ajeno(mismo_cliente, propio, index, destino)
+            informativo = (
+                mismo_cliente
+                and self.reglas.mismo_cliente_otro_caso_es_informativo
+                and not _es_descarga_de_nyscef(documento.nombre, index)
+            )
+            if informativo:
+                regla = "4_relacion_entre_casos_informativo"
+                headline = f"Cita {index}, otro caso del mismo cliente ('{destino.titulo}')."
             self._hallazgo(
                 regla,
                 carpeta,
@@ -316,7 +350,7 @@ class Revision:
                 found_index=index,
                 found_index_belongs_to=destino.titulo,
                 expected_index=carpeta.nombre.index,
-                para_llm=not propio,
+                para_llm=not propio and not informativo,
             )
 
     # ------------------------------------------------------------------ entrada
@@ -334,6 +368,21 @@ class Revision:
             self._sin_index(carpeta, indices)
         elif carpeta.nombre.index:
             self._con_index(carpeta, indices)
+
+
+def _un_digito_distinto(index: str, propio: str | None) -> bool:
+    """726562/2022 frente a 725562/2022: el OCR leyó mal un dígito del index propio."""
+    if not propio or "/" not in index or "/" not in propio:
+        return False
+    (numero, anio), (numero_propio, anio_propio) = index.split("/"), propio.split("/")
+    if anio != anio_propio or len(numero) != len(numero_propio):
+        return False
+    return sum(a != b for a, b in zip(numero, numero_propio, strict=True)) == 1
+
+
+def _es_descarga_de_nyscef(nombre_archivo: str, index: str) -> bool:
+    coincide = NOMBRE_DE_NYSCEF.match(nombre_archivo)
+    return bool(coincide) and f"{int(coincide.group(1))}/{coincide.group(2)}" == index
 
 
 def _tipo_de_documento_ajeno(

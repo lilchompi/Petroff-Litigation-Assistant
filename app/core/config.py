@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: str = ""
     CLAUDE_MODEL: str = "claude-sonnet-5-5"
     CLAUDE_MAX_TOKENS: int = 8000
+    # Modelo que decide los hallazgos ambiguos de la revisión de Matters (capa 2).
+    CLAUDE_MODEL_REVISION: str = "claude-opus-5-5"
 
     EMBEDDING_MODEL_NAME: str = "sentence-transformers/all-MiniLM-L6-v2"
     EMBEDDING_DIM: int = 384
@@ -49,12 +51,16 @@ class Settings(BaseSettings):
     VALIDACIONES_DIR: Path = RAIZ_PROYECTO / "salida" / "validaciones"
     # Revisión de calidad: planes, hallazgos y diarios de respaldo de lo aplicado.
     REVISION_DIR: Path = RAIZ_PROYECTO / "salida" / "revision"
-    # Carpeta de SharePoint (biblioteca Documents) donde llegan los JSONL por caso.
-    SHAREPOINT_CARPETA_JSONL: str = "JSONL/Casos_rafael"
-    # Index que son citas de jurisprudencia y no casos; además, los que salgan en las
-    # carátulas de MINIMO_CASOS_CITA casos distintos del lote.
-    INDEX_CITAS: list[str] = ["15109/2013"]
-    MINIMO_CASOS_CITA: int = 3
+    # Lo que hay que cambiar en HubSpot por cada cambio aplicado en SharePoint (para Excel).
+    TAREAS_HUBSPOT: Path = RAIZ_PROYECTO / "salida" / "revision" / "tareas_hubspot.csv"
+    # Carpetas de SharePoint (biblioteca Documents) donde llegan los JSONL por caso.
+    SHAREPOINT_CARPETAS_JSONL: list[str] = [
+        "JSONL/Casos_rafael",
+        "JSONL/Casos_gpu2",
+        "JSONL/Casos_gpu3",
+    ]
+    # Umbrales, listas y filtros de las reglas de revisión (se afinan sin tocar el código).
+    REGLAS_REVISION: Path = RAIZ_PROYECTO / "config" / "reglas_revision.toml"
 
 
 settings = Settings()

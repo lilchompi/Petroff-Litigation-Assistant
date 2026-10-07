@@ -10,9 +10,10 @@ from app.core.config import settings
 from app.revision.motor import IndiceMatters, Revision, citas_del_lote
 from app.revision.nombres import leer_nombre
 from app.revision.plan import Plan
-from app.servicios.validacion import ValidacionJsonl, validar_jsonl_contra_sharepoint
+from app.revision.reglas import Reglas, cargar_reglas
+from app.servicios.validacion import ValidacionJsonl, validar_inventario
 from app.sharepoint import ClienteGraph, SharePointError
-from app.validacion import InventarioJsonl, leer_inventario
+from app.validacion import InventarioJsonl, leer_inventario_de_bytes
 
 FORMATO_FECHA = "%Y%m%d-%H%M%S"
 CODIFICACION = "utf-8"
@@ -27,22 +28,44 @@ class ResultadoRevision:
     ruta_plan: Path | None = None
     ruta_informe: Path | None = None
     ruta_hallazgos: Path | None = None
+    matters: IndiceMatters | None = None
+    # carpeta_id -> {archivos_sharepoint, archivos_jsonl, faltan} de los JSONL revisados
+    cobertura: dict[str, dict[str, int]] = field(default_factory=dict)
 
 
-def descargar_jsonl(cliente: ClienteGraph, ruta_sharepoint: str, destino: Path) -> list[Path]:
-    """Baja los .jsonl de una carpeta de SharePoint. Llevan datos personales: van a salida/."""
-    destino.mkdir(parents=True, exist_ok=True)
-    rutas = []
-    for item in cliente.hijos_de_ruta(ruta_sharepoint):
+def leer_jsonl_de_carpetas(cliente: ClienteGraph, carpetas: list[str]) -> list[InventarioJsonl]:
+    """Lee los JSONL de varias carpetas. Si un caso está en más de una (mismo
+    sharepoint_folder_id), se queda con el JSONL generado más recientemente."""
+    por_caso: dict[str, InventarioJsonl] = {}
+    for carpeta in carpetas:
+        for inventario in leer_jsonl_de_sharepoint(cliente, carpeta):
+            clave = inventario.id_carpeta or str(inventario.ruta)
+            actual = por_caso.get(clave)
+            if actual is None or _generado(inventario) > _generado(actual):
+                por_caso[clave] = inventario
+    return list(por_caso.values())
+
+
+def _generado(inventario: InventarioJsonl) -> str:
+    return str((inventario.cabecera or {}).get("generated", ""))
+
+
+def leer_jsonl_de_sharepoint(cliente: ClienteGraph, ruta_sharepoint: str) -> list[InventarioJsonl]:
+    """Lee los .jsonl de una carpeta de SharePoint en memoria, sin guardar nada en disco.
+
+    De cada JSONL se conservan solo los datos de sus archivos y sus index; el texto extraído
+    (que es lo que pesa y lleva datos personales) se descarta al leerlo.
+    """
+    inventarios = []
+    for item in sorted(cliente.hijos_de_ruta(ruta_sharepoint), key=lambda x: x["name"]):
         if "folder" in item or not item["name"].casefold().endswith(".jsonl"):
             continue
-        ruta = destino / item["name"]
-        ruta.write_bytes(cliente.descargar(item["id"]))
-        rutas.append(ruta)
-    return sorted(rutas)
+        contenido = cliente.descargar(item["id"])
+        inventarios.append(leer_inventario_de_bytes(contenido, f"{ruta_sharepoint}/{item['name']}"))
+    return inventarios
 
 
-def _citas(inventarios: list[InventarioJsonl]) -> set[str]:
+def _citas(inventarios: list[InventarioJsonl], reglas: Reglas) -> set[str]:
     """Las citas configuradas más los index que salen en las carátulas de muchos casos."""
     por_cliente: dict[str, set[str]] = {}
     for inventario in inventarios:
@@ -50,7 +73,9 @@ def _citas(inventarios: list[InventarioJsonl]) -> set[str]:
         indices = {i for a in inventario.archivos for i in a.indices_caratula} - {nombre.index}
         cliente = " ".join(sorted(nombre.palabras_cliente)) or str(inventario.ruta)
         por_cliente.setdefault(cliente, set()).update(indices)
-    return set(settings.INDEX_CITAS) | citas_del_lote(por_cliente, settings.MINIMO_CASOS_CITA)
+    return set(reglas.citas_conocidas) | citas_del_lote(
+        por_cliente, reglas.minimo_clientes_para_cita
+    )
 
 
 def _id_carpeta(inventario: InventarioJsonl, matters: IndiceMatters) -> str | None:
@@ -76,22 +101,38 @@ def _guardar(resultado: ResultadoRevision) -> None:
             archivo.write(linea + "\n")
 
 
-def revisar_lote(rutas: list[Path], cliente: ClienteGraph | None = None) -> ResultadoRevision:
+def _cobertura(validacion: ValidacionJsonl, carpeta_id: str) -> dict[str, int]:
+    resultados = validacion.resultados
+    return {
+        "archivos_sharepoint": sum(r.total_sharepoint for r in resultados),
+        "archivos_jsonl": sum(r.total_jsonl for r in resultados),
+        "faltan": sum(len(r.faltantes) for r in resultados) + (0 if resultados else 1),
+        "carpeta_id": carpeta_id,
+    }
+
+
+def revisar_lote(
+    inventarios: list[InventarioJsonl], cliente: ClienteGraph | None = None
+) -> ResultadoRevision:
     """Valida cada JSONL contra SharePoint y aplica las reglas. Solo lee; devuelve el plan."""
     cliente = cliente or ClienteGraph()
-    inventarios = [leer_inventario(r) for r in rutas]
     matters = IndiceMatters(cliente.carpetas_de_casos())
-    revision = Revision(matters, citas=_citas(inventarios))
-    resultado = ResultadoRevision(plan=revision.plan)
-    for ruta, inventario in zip(rutas, inventarios, strict=True):
-        try:
-            resultado.validaciones.append(validar_jsonl_contra_sharepoint(ruta, cliente=cliente))
-        except (FileNotFoundError, SharePointError, ValueError) as error:
-            resultado.errores[ruta.name] = str(error)
+    reglas = cargar_reglas()
+    revision = Revision(matters, citas=_citas(inventarios, reglas), reglas=reglas)
+    revision.plan.reglas = reglas.version
+    resultado = ResultadoRevision(plan=revision.plan, matters=matters)
+    for inventario in inventarios:
+        nombre = inventario.ruta.name
         carpeta_id = _id_carpeta(inventario, matters)
         if carpeta_id is None:
-            resultado.errores[ruta.name] = "no se encontró su carpeta en Matters/"
+            resultado.errores[nombre] = "no se encontró su carpeta en Matters/"
             continue
+        try:
+            validacion = validar_inventario(inventario, cliente=cliente)
+            resultado.validaciones.append(validacion)
+            resultado.cobertura[carpeta_id] = _cobertura(validacion, carpeta_id)
+        except (SharePointError, ValueError) as error:
+            resultado.errores[nombre] = str(error)
         revision.revisar(carpeta_id, inventario.archivos)
     revision.cerrar()
     _guardar(resultado)

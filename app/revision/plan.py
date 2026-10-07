@@ -58,12 +58,14 @@ class Hallazgo:
 @dataclass
 class Plan:
     generado: str = field(default_factory=ahora)
+    reglas: str = ""  # versión de config/reglas_revision.toml con que se generó
     acciones: list[Accion] = field(default_factory=list)
     hallazgos: list[Hallazgo] = field(default_factory=list)
 
     def a_dict(self) -> dict[str, Any]:
         return {
             "generado": self.generado,
+            "reglas": self.reglas,
             "acciones": [asdict(a) for a in self.acciones],
             "hallazgos": [asdict(h) for h in self.hallazgos],
         }
@@ -79,6 +81,7 @@ class Plan:
         datos = json.loads(ruta.read_text(encoding=CODIFICACION))
         return cls(
             generado=datos["generado"],
+            reglas=datos.get("reglas", ""),
             acciones=[Accion(**a) for a in datos["acciones"]],
             hallazgos=[Hallazgo(**h) for h in datos["hallazgos"]],
         )

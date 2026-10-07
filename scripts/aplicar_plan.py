@@ -19,6 +19,8 @@ from pathlib import Path
 from app.core.config import settings
 from app.revision.ejecutor import Diario, Ejecutor
 from app.revision.plan import Plan
+from app.revision.tareas_hubspot import anotar, tarea_de
+from app.revision.trazabilidad import Trazabilidad
 from app.sharepoint import ClienteGraph
 
 
@@ -47,6 +49,14 @@ def main() -> int:
         print(f"  SALTADA {saltada}")
     if resultado.error:
         print(f"\nPARADO POR ERROR: {resultado.error}")
+    if args.ejecutar and resultado.aplicadas:
+        tareas = [t for t in map(tarea_de, resultado.aplicadas) if t]
+        anotar(settings.TAREAS_HUBSPOT, tareas)
+        traza = Trazabilidad()
+        traza.registrar_aplicadas(resultado.aplicadas)
+        traza.guardar()
+        print("", *traza.resumen(), sep="\n")
+        print(f"\nTareas para HubSpot ({len(tareas)} nuevas): {settings.TAREAS_HUBSPOT}")
     if args.ejecutar and resultado.cambios:
         print(f"\nDiario de respaldo ({resultado.cambios} cambios): {diario.ruta}")
         print("Para deshacer todo lo aplicado:")

@@ -4,7 +4,8 @@
 - Regla 2: Eliminación de artefactos de PaddleOCR y Unicode roto.
 - Regla 3: Des-guionado y unificación de párrafos.
 - Regla 4: Normalización de términos legales críticos.
-- Regla 5: Anonimización de PII preservando los últimos 4 dígitos.
+- Regla 5: Anonimización de PII (SSN, cuentas, teléfonos con sus últimos 4 dígitos;
+  correos y fechas de nacimiento completos).
 """
 
 import re
@@ -110,6 +111,14 @@ def _anonimizar_cuenta(coincidencia: re.Match[str]) -> str:
 
 
 def anonimizar_pii(texto: str) -> str:
-    """Regla 5: SSN -> [SSN-REDACTED-1775]; Acct# 1661310060 -> Acct #[REDACTED-0060]."""
-    sin_ssn = patrones.SSN.sub(patrones.SSN_ANONIMIZADO, texto)
-    return patrones.NUMERO_DE_CUENTA.sub(_anonimizar_cuenta, sin_ssn)
+    """Regla 5: SSN -> [SSN-REDACTED-1775]; Acct# 1661310060 -> Acct #[REDACTED-0060];
+    correos -> [EMAIL-REDACTED]; (718) 555-1234 -> [TEL-REDACTED-1234];
+    DOB: 01/02/1980 -> DOB: [DOB-REDACTED].
+
+    Los nombres y las direcciones se conservan: identifican las partes del pleito.
+    """
+    texto = patrones.FECHA_DE_NACIMIENTO.sub(patrones.FECHA_DE_NACIMIENTO_ANONIMIZADA, texto)
+    texto = patrones.SSN.sub(patrones.SSN_ANONIMIZADO, texto)
+    texto = patrones.NUMERO_DE_CUENTA.sub(_anonimizar_cuenta, texto)
+    texto = patrones.CORREO.sub(patrones.CORREO_ANONIMIZADO, texto)
+    return patrones.TELEFONO.sub(patrones.TELEFONO_ANONIMIZADO, texto)

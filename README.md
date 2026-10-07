@@ -78,7 +78,12 @@ rag_petroff_app/
 5. **Regla 5 (Anonimización de PII Preservando Búsqueda):**
    - SSN: `056-88-1775` → `[SSN-REDACTED-1775]`.
    - Cuentas bancarias y préstamos: `Loan No.: 195786063` → `Loan No.[REDACTED-6063]`.
+   - Teléfonos: `(718) 555-1234` → `[TEL-REDACTED-1234]`.
+   - Correos: `jdoe@gmail.com` → `[EMAIL-REDACTED]`.
+   - Fecha de nacimiento: `DOB: 01/02/1980` → `DOB: [DOB-REDACTED]`.
    - Permite que el abogado consulte por los últimos 4 dígitos manteniendo cumplimiento de privacidad.
+   - Los nombres, las direcciones y los index de corte se conservan: identifican las partes y
+     el pleito, y la revisión de Matters los necesita.
 
 ---
 

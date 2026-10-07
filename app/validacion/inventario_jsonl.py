@@ -138,17 +138,16 @@ def _archivo(registro: dict[str, Any], linea: int, cabecera: dict | None) -> Arc
     )
 
 
-def _registros(ruta: Path) -> tuple[list[tuple[int, dict[str, Any]]], int]:
+def _registros(lineas, origen: str) -> tuple[list[tuple[int, dict[str, Any]]], int]:
     registros, invalidas = [], 0
-    with ruta.open(encoding=CODIFICACION) as archivo:
-        for numero, linea in enumerate(archivo, 1):
-            if not linea.strip():
-                continue
-            try:
-                registros.append((numero, json.loads(linea)))
-            except json.JSONDecodeError:
-                invalidas += 1
-                logger.warning("Línea %d de %s no es JSON válido; se omite.", numero, ruta)
+    for numero, linea in enumerate(lineas, 1):
+        if not linea.strip():
+            continue
+        try:
+            registros.append((numero, json.loads(linea)))
+        except json.JSONDecodeError:
+            invalidas += 1
+            logger.warning("Línea %d de %s no es JSON válido; se omite.", numero, origen)
     return registros, invalidas
 
 
@@ -156,7 +155,21 @@ def leer_inventario(ruta: Path) -> InventarioJsonl:
     """Lanza FileNotFoundError si `ruta` no existe."""
     if not ruta.exists():
         raise FileNotFoundError(f"No existe el archivo {ruta}")
-    registros, invalidas = _registros(ruta)
+    with ruta.open(encoding=CODIFICACION) as archivo:
+        return _inventario(ruta, _registros(archivo, str(ruta)))
+
+
+def leer_inventario_de_bytes(contenido: bytes, nombre: str) -> InventarioJsonl:
+    """El mismo inventario, leído en memoria (de SharePoint) sin escribir nada en disco.
+
+    Solo se guardan los datos de cada archivo y sus index; el texto se descarta.
+    """
+    texto = contenido.decode(CODIFICACION, errors="replace")
+    return _inventario(Path(nombre), _registros(texto.splitlines(), nombre))
+
+
+def _inventario(ruta: Path, leidos: tuple[list, int]) -> InventarioJsonl:
+    registros, invalidas = leidos
     cabecera = None
     if registros and "matter" in registros[0][1] and "file_name" not in registros[0][1]:
         cabecera = registros.pop(0)[1]

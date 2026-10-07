@@ -24,7 +24,24 @@ NUMERO_DE_CUENTA = re.compile(
     re.IGNORECASE,
 )
 
-MARCA_PII_ANONIMIZADA = re.compile(r"\[(SSN|REDACTED)")
+# Correo electrónico completo.
+CORREO = re.compile(r"\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b")
+CORREO_ANONIMIZADO = "[EMAIL-REDACTED]"
+
+# Teléfono de EE. UU.: (718) 555-1234, 718-555-1234, 718.555.1234, +1 718 555 1234.
+# Exige separadores para no confundirse con index (826173/2025) ni con números de cuenta.
+TELEFONO = re.compile(r"(?<![\d/])(?:\+?1[-. ]?)?\(?(\d{3})\)?[-. ]\d{3}[-. ](\d{4})(?![\d/])")
+TELEFONO_ANONIMIZADO = r"[TEL-REDACTED-\2]"
+
+# La fecha que sigue a "DOB" / "date of birth": se conserva la etiqueta, se quita la fecha.
+FECHA_DE_NACIMIENTO = re.compile(
+    r"\b(?P<etiqueta>D\.?O\.?B\.?|date\s+of\s+birth|birth\s*date)(?P<separador>\s*[:#]?\s*)"
+    r"(?:\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|[A-Za-z]{3,9}\.?\s+\d{1,2},?\s+\d{4})",
+    re.IGNORECASE,
+)
+FECHA_DE_NACIMIENTO_ANONIMIZADA = r"\g<etiqueta>\g<separador>[DOB-REDACTED]"
+
+MARCA_PII_ANONIMIZADA = re.compile(r"\[(SSN|REDACTED|EMAIL-REDACTED|TEL-REDACTED|DOB-REDACTED)")
 
 SALTOS_DE_LINEA_EXCESIVOS = re.compile(r"\n{3,}")
 SEPARADOR_DE_PARRAFO = "\n\n"

@@ -51,12 +51,12 @@ def main() -> int:
         print(f"\nPARADO POR ERROR: {resultado.error}")
     if args.ejecutar and resultado.aplicadas:
         tareas = [t for t in map(tarea_de, resultado.aplicadas) if t]
-        anotar(settings.TAREAS_HUBSPOT, tareas)
+        ruta_tareas = anotar(settings.TAREAS_HUBSPOT, tareas)
         traza = Trazabilidad()
         traza.registrar_aplicadas(resultado.aplicadas)
         traza.guardar()
         print("", *traza.resumen(), sep="\n")
-        print(f"\nTareas para HubSpot ({len(tareas)} nuevas): {settings.TAREAS_HUBSPOT}")
+        print(f"\nTareas para HubSpot ({len(tareas)} nuevas): {ruta_tareas}")
     if args.ejecutar and resultado.cambios:
         print(f"\nDiario de respaldo ({resultado.cambios} cambios): {diario.ruta}")
         print("Para deshacer todo lo aplicado:")

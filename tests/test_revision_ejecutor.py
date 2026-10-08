@@ -138,3 +138,17 @@ def test_plan_desactualizado_se_salta(tmp_path):
     resultado = Ejecutor(sp, Diario(tmp_path / "d.jsonl"), simular=False).aplicar(_plan())
     assert len(resultado.saltadas) == 1
     assert sp.items["1738"]["name"] == "Alguien la renombró"
+
+
+def test_deshacer_solo_fusiones_deja_los_renombres(tmp_path):
+    sp = SharePointEnMemoria()
+    diario = Diario(tmp_path / "d.jsonl")
+    Ejecutor(sp, diario, simular=False).aplicar(_plan())
+
+    deshacer(sp, diario.ruta, simular=False, tipos={"fusionar"})
+    recreada = next(
+        i for i, d in sp.items.items() if d["name"] == "Choi, Younga - Closed - 800410 - 0"
+    )
+    assert sp.items["complaint"]["padre"] == recreada  # el archivo volvió a la carpeta recuperada
+    assert not any(d["name"].startswith("Fusionado de") for d in sp.items.values())
+    assert sp.items["1738"]["name"].endswith("1-23-cv-01270")  # el renombre se queda

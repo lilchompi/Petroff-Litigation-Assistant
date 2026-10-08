@@ -7,10 +7,12 @@ from datetime import datetime
 from pathlib import Path
 
 from app.core.config import settings
+from app.revision.informe_plan import informe_plan
 from app.revision.motor import IndiceMatters, Revision, citas_del_lote
 from app.revision.nombres import leer_nombre
 from app.revision.plan import Plan
 from app.revision.reglas import Reglas, cargar_reglas
+from app.revision.reporte_mario import generar_reporte
 from app.servicios.validacion import ValidacionJsonl, validar_inventario
 from app.sharepoint import ClienteGraph, SharePointError
 from app.validacion import InventarioJsonl, leer_inventario_de_bytes
@@ -28,6 +30,7 @@ class ResultadoRevision:
     ruta_plan: Path | None = None
     ruta_informe: Path | None = None
     ruta_hallazgos: Path | None = None
+    ruta_reporte_mario: Path | None = None
     matters: IndiceMatters | None = None
     # carpeta_id -> {archivos_sharepoint, archivos_jsonl, faltan} de los JSONL revisados
     cobertura: dict[str, dict[str, int]] = field(default_factory=dict)
@@ -85,11 +88,48 @@ def _id_carpeta(inventario: InventarioJsonl, matters: IndiceMatters) -> str | No
     return next((c.id for c in matters.por_item.values() if c.titulo == nombre), None)
 
 
+def encabezado_informe(resultado: ResultadoRevision) -> list[str]:
+    incompletos = [v.ruta_jsonl.name for v in resultado.validaciones if not v.completo]
+    total = len(resultado.validaciones) + len(resultado.errores)
+    return [
+        f"Revisión de {total} JSONL — {resultado.plan.generado}",
+        "=" * 70,
+        f"  JSONL completos frente a SharePoint: {len(resultado.validaciones) - len(incompletos)}"
+        f" de {len(resultado.validaciones)}",
+        *(f"  INCOMPLETO: {nombre}" for nombre in incompletos),
+        *(f"  ERROR en {nombre}: {error}" for nombre, error in resultado.errores.items()),
+        f"  Acciones en el plan: {len(resultado.plan.acciones)}",
+        f"  Hallazgos: {len(resultado.plan.hallazgos)}"
+        f" ({sum(h.para_llm for h in resultado.plan.hallazgos)} para el LLM)",
+    ]
+
+
+def escribir_informe(resultado: ResultadoRevision) -> str:
+    """El informe legible del plan, junto a él: informe__<fecha>.txt."""
+    texto = informe_plan(resultado.plan, encabezado_informe(resultado))
+    resultado.ruta_informe = resultado.ruta_plan.with_name(
+        resultado.ruta_plan.name.replace("plan__", "informe__")
+    ).with_suffix(".txt")
+    resultado.ruta_informe.write_text(texto + "\n", encoding=CODIFICACION)
+    return texto
+
+
+def escribir_reporte_mario(plan: Plan, ruta_plan: Path) -> Path:
+    """El reporte para Mario, clasificado según la guía: reporte_mario__<fecha>.md."""
+    ruta = ruta_plan.with_name(ruta_plan.name.replace("plan__", "reporte_mario__")).with_suffix(
+        ".md"
+    )
+    ruta.write_text(generar_reporte(plan, ruta_plan.name), encoding=CODIFICACION)
+    return ruta
+
+
 def _guardar(resultado: ResultadoRevision) -> None:
     carpeta = settings.REVISION_DIR
     fecha = datetime.now().strftime(FORMATO_FECHA)
     resultado.ruta_plan = carpeta / f"plan__{fecha}.json"
     resultado.plan.guardar(resultado.ruta_plan)
+    escribir_informe(resultado)
+    resultado.ruta_reporte_mario = escribir_reporte_mario(resultado.plan, resultado.ruta_plan)
     # Las líneas review_finding, por caso, listas para añadirlas a su JSONL.
     resultado.ruta_hallazgos = carpeta / f"hallazgos__{fecha}"
     resultado.ruta_hallazgos.mkdir(parents=True, exist_ok=True)

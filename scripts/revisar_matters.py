@@ -23,7 +23,6 @@ import sys
 from pathlib import Path
 
 from app.core.config import settings
-from app.revision.informe_plan import informe_plan
 from app.revision.trazabilidad import Trazabilidad
 from app.servicios.revision import ResultadoRevision, leer_jsonl_de_carpetas, revisar_lote
 from app.sharepoint import ClienteGraph
@@ -45,21 +44,6 @@ def _argumentos() -> argparse.Namespace:
         f"{', '.join(settings.SHAREPOINT_CARPETAS_JSONL)}",
     )
     return parser.parse_args()
-
-
-def _encabezado(resultado: ResultadoRevision, total: int) -> list[str]:
-    incompletos = [v.ruta_jsonl.name for v in resultado.validaciones if not v.completo]
-    return [
-        f"Revisión de {total} JSONL — {resultado.plan.generado}",
-        "=" * 70,
-        f"  JSONL completos frente a SharePoint: {len(resultado.validaciones) - len(incompletos)}"
-        f" de {len(resultado.validaciones)}",
-        *(f"  INCOMPLETO: {nombre}" for nombre in incompletos),
-        *(f"  ERROR en {nombre}: {error}" for nombre, error in resultado.errores.items()),
-        f"  Acciones en el plan: {len(resultado.plan.acciones)}",
-        f"  Hallazgos: {len(resultado.plan.hallazgos)}"
-        f" ({sum(h.para_llm for h in resultado.plan.hallazgos)} para el LLM)",
-    ]
 
 
 def _trazabilidad(resultado: ResultadoRevision) -> Trazabilidad:
@@ -86,17 +70,14 @@ def main() -> int:
         return 1
 
     resultado = revisar_lote(inventarios, cliente)
-    texto = informe_plan(resultado.plan, _encabezado(resultado, len(inventarios)))
-    ruta_informe = resultado.ruta_plan.with_name(
-        resultado.ruta_plan.name.replace("plan__", "informe__")
-    ).with_suffix(".txt")
-    ruta_informe.write_text(texto + "\n", encoding="utf-8")
+    texto = resultado.ruta_informe.read_text(encoding="utf-8")
     traza = _trazabilidad(resultado)
 
     print(texto)
     print("", *traza.resumen(), sep="\n")
-    print(f"\nPlan:          {resultado.ruta_plan}\nInforme:       {ruta_informe}")
+    print(f"\nPlan:          {resultado.ruta_plan}\nInforme:       {resultado.ruta_informe}")
     print(f"Hallazgos:     {resultado.ruta_hallazgos}\nTrazabilidad:  {traza.ruta_csv}")
+    print(f"Para Mario:    {resultado.ruta_reporte_mario}")
     print("\nNada se ha cambiado. Para simular el plan:")
     print(f'  python -m scripts.aplicar_plan "{resultado.ruta_plan}"')
     return 0

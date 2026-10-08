@@ -90,14 +90,27 @@ def cancelacion(descripcion: str) -> dict[str, str]:
     }
 
 
-def anotar(ruta: Path, filas: list[dict[str, str]]) -> None:
-    """Añade filas al CSV de tareas (lo crea con encabezado si no existe)."""
-    if not filas:
-        return
-    ruta.parent.mkdir(parents=True, exist_ok=True)
+def _escribir(ruta: Path, filas: list[dict[str, str]]) -> None:
     nuevo = not ruta.exists()
     with ruta.open("a", encoding=CODIFICACION, newline="") as archivo:
         escritor = csv.DictWriter(archivo, fieldnames=COLUMNAS)
         if nuevo:
             escritor.writeheader()
         escritor.writerows(filas)
+
+
+def anotar(ruta: Path, filas: list[dict[str, str]]) -> Path | None:
+    """Añade filas al CSV de tareas (lo crea con encabezado si no existe).
+
+    Si el CSV está abierto en Excel (Windows lo bloquea), las filas van a un archivo aparte,
+    <nombre>__pendiente_<fecha>.csv, para no perderlas. Devuelve la ruta donde se escribió.
+    """
+    if not filas:
+        return None
+    ruta.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        _escribir(ruta, filas)
+    except PermissionError:
+        ruta = ruta.with_name(f"{ruta.stem}__pendiente_{ahora().replace(':', '')}.csv")
+        _escribir(ruta, filas)
+    return ruta

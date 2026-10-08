@@ -190,20 +190,33 @@ class Ejecutor:
         return resultado
 
 
+def lineas_del_diario(ruta_diario: Path, tipos: set[str] | None = None) -> list[dict[str, Any]]:
+    """Las líneas del diario, opcionalmente solo las de ciertos tipos de acción.
+
+    La etiqueta de cada línea es '<n>:<tipo>:<regla>' (p. ej. '3:fusionar:6_ocr_...').
+    """
+    lineas = Diario.leer(ruta_diario)
+    if not tipos:
+        return lineas
+    return [linea for linea in lineas if linea["accion"].split(":")[1] in tipos]
+
+
 def deshacer(
     cliente: ClienteGraph,
     ruta_diario: Path,
     simular: bool = True,
     avisar: Callable[[str], None] = logger.info,
+    tipos: set[str] | None = None,
 ) -> Resultado:
     """Revierte el diario en orden inverso. Solo revierte lo que sigue como lo dejó el plan.
 
     Una carpeta eliminada se vuelve a crear con su nombre y en su sitio (con un id nuevo), y
     sus archivos vuelven a ella. Las carpetas que creó la fusión se eliminan si quedan vacías.
+    Con `tipos` (p. ej. {"fusionar"}) solo se revierten los cambios de esas acciones.
     """
     resultado = Resultado()
     reemplazos: dict[str, str] = {}  # id de carpeta eliminada -> id de la carpeta recreada
-    for linea in reversed(Diario.leer(ruta_diario)):
+    for linea in reversed(lineas_del_diario(ruta_diario, tipos)):
         etiqueta = f"#{linea['seq']} {linea['op']}"
         try:
             hecho = _revertir(cliente, linea, simular, avisar, reemplazos)

@@ -87,6 +87,8 @@ def main() -> int:
         f"Plan nuevo: {resultado.ruta_plan}  ({len(resultado.plan.acciones)} acciones, "
         f"{len(resultado.plan.hallazgos)} hallazgos)"
     )
+    print(f"Informe:    {resultado.ruta_informe}")
+    print(f"Para Mario: {resultado.ruta_reporte_mario}")
     print("No se aplicó nada. Revísalo y, si está bien:")
     print(f'  python -m scripts.aplicar_plan "{resultado.ruta_plan}"')
     return 0

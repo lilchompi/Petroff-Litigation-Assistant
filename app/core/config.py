@@ -59,6 +59,8 @@ class Settings(BaseSettings):
         "JSONL/Casos_gpu2",
         "JSONL/Casos_gpu3",
     ]
+    # Resumen (solo conteos, sin texto) de la limpieza en memoria de los JSONL.
+    LIMPIEZA_DIR: Path = RAIZ_PROYECTO / "salida" / "limpieza"
     # Umbrales, listas y filtros de las reglas de revisión (se afinan sin tocar el código).
     REGLAS_REVISION: Path = RAIZ_PROYECTO / "config" / "reglas_revision.toml"
 

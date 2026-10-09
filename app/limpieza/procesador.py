@@ -29,19 +29,23 @@ def _confianza_desde_descripcion_ocr(descripcion: str) -> float | None:
     return valor * PORCENTAJE if valor <= CONFIANZA_MAXIMA_EN_FRACCION else valor
 
 
-def _extraer_confianza(registro: dict[str, Any]) -> float | None:
+def extraer_confianza(registro: dict[str, Any]) -> float | None:
     confianza = registro.get("confianza_pagina") or registro.get("confianza_promedio")
     if confianza is None and registro.get("read_with"):
         return _confianza_desde_descripcion_ocr(str(registro["read_with"]))
     return confianza
 
 
-def limpiar_texto(texto_crudo: str) -> str:
-    """Aplica las reglas 2 a 5 y compacta los saltos de línea repetidos."""
+def limpiar_texto(texto_crudo: str, anonimizar: bool = True) -> str:
+    """Aplica las reglas 2 a 5 y compacta los saltos de línea repetidos.
+
+    anonimizar=False se salta la regla 5: el texto conserva SSN, cuentas, teléfonos, etc.
+    """
     texto = eliminar_artefactos_ocr(texto_crudo)
     texto = unificar_parrafos(desguionar(texto))
     texto = normalizar_terminos_legales(texto)
-    texto = anonimizar_pii(texto)
+    if anonimizar:
+        texto = anonimizar_pii(texto)
     return patrones.SALTOS_DE_LINEA_EXCESIVOS.sub(patrones.SEPARADOR_DE_PARRAFO, texto).strip()
 
 
@@ -49,7 +53,7 @@ def procesar_registro_ocr(registro: dict[str, Any]) -> dict[str, Any]:
     """Devuelve el registro enriquecido con `se_descarta`, `motivo_descarte`,
     `texto_limpio` y `metricas_limpieza`."""
     texto_crudo = _extraer_texto_crudo(registro)
-    motivo = motivo_de_descarte(texto_crudo, _extraer_confianza(registro))
+    motivo = motivo_de_descarte(texto_crudo, extraer_confianza(registro))
 
     if motivo:
         return {

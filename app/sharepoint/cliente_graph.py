@@ -1,6 +1,7 @@
 """Cliente mínimo de Microsoft Graph: lista todos los archivos de la carpeta de un caso.
 
-Solo lee. Dos modos de autenticación, elegidos por el `.env`:
+Solo lee, salvo con escritura=True (aplicar un plan, subir los JSONL limpios). Dos modos
+de autenticación, elegidos por el `.env`:
 - Delegado (sin GRAPH_CLIENT_SECRET): entra como el usuario y ve lo mismo que él. La
   primera vez abre el navegador; después usa el token guardado en GRAPH_TOKEN_CACHE.
 - Aplicación (con GRAPH_CLIENT_SECRET): credenciales de la app registration.
@@ -244,6 +245,33 @@ class ClienteGraph:
             {"name": nombre, "folder": {}, "@microsoft.graph.conflictBehavior": "fail"},
         )
         return nueva["id"], True
+
+    def subir(self, padre_id: str, nombre: str, contenido: bytes) -> dict:
+        """Sube un archivo (hasta 250 MB) a esa carpeta. Si ya existe uno con ese nombre, lo
+        reemplaza como versión nueva: la anterior queda en el historial de versiones."""
+        if not self._escritura:
+            raise SoloLecturaError("Este cliente es de solo lectura: créalo con escritura=True.")
+        destino = (
+            f"{GRAPH}/drives/{self._drive()}/items/{padre_id}:/{quote(nombre)}:/content"
+            "?@microsoft.graph.conflictBehavior=replace"
+        )
+        renovar = False
+        for intento in range(MAX_INTENTOS):
+            cabeceras = {"Authorization": f"Bearer {self._obtener_token(renovar)}"}
+            respuesta = self._sesion.put(
+                destino, headers=cabeceras, data=contenido, timeout=TIMEOUT_SEGUNDOS
+            )
+            renovar = False
+            if respuesta.ok:
+                return respuesta.json()
+            if respuesta.status_code == HTTPStatus.UNAUTHORIZED:
+                renovar = True
+            elif respuesta.status_code in ESTADOS_REINTENTABLES:
+                espera = int(respuesta.headers.get("Retry-After", 2**intento))
+                time.sleep(min(espera, ESPERA_MAXIMA_SEGUNDOS))
+            else:
+                _lanzar(respuesta, nombre)
+        raise SharePointError(f"No se pudo subir {nombre} tras {MAX_INTENTOS} intentos")
 
     def descargar(self, item_id: str) -> bytes:
         """El contenido de un archivo, en memoria, con los mismos reintentos que _pedir."""

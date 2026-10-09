@@ -90,6 +90,24 @@ def _destino(
     return estado, carpeta["name"], carpeta["id"]
 
 
+def _procesar_o_anotar(
+    cliente: ClienteGraph, remoto: JsonlRemoto, ejecutar: bool, sacados: dict
+) -> dict:
+    """Un JSONL que falla queda anotado con su error y no detiene a los demás."""
+    try:
+        return _procesar(cliente, remoto, ejecutar, sacados)
+    except Exception as error:
+        vacia = dict.fromkeys(COLUMNAS, 0) | {"carpeta_destino": "", "matter": ""}
+        return vacia | {
+            "carpeta": remoto.carpeta,
+            "jsonl": remoto.nombre,
+            "estado": f"error: {type(error).__name__}",
+            "coverage": "",
+            "partial": "",
+            "_motivos": {},
+        }
+
+
 def _procesar(cliente: ClienteGraph, remoto: JsonlRemoto, ejecutar: bool, sacados: dict) -> dict:
     limpio = limpiar_jsonl(cliente.descargar(remoto.id))
     estado, nombre_destino, carpeta_id = _destino(cliente, limpio, sacados)
@@ -149,7 +167,9 @@ def main() -> int:
     print(f"{modo} {len(remotos)} JSONL...", flush=True)
     sacados = _archivos_sacados_por_diarios()
     with ThreadPoolExecutor(DESCARGAS_EN_PARALELO) as hilos:
-        filas = list(hilos.map(lambda r: _procesar(cliente, r, args.ejecutar, sacados), remotos))
+        filas = list(
+            hilos.map(lambda r: _procesar_o_anotar(cliente, r, args.ejecutar, sacados), remotos)
+        )
 
     motivos: Counter[str] = Counter()
     for fila in filas:

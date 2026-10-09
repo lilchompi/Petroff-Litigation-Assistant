@@ -159,9 +159,11 @@ class ClienteGraph:
         renovar = False
         for intento in range(MAX_INTENTOS):
             cabeceras = {"Authorization": f"Bearer {self._obtener_token(renovar)}"}
-            respuesta = self._sesion.request(
-                metodo, destino, headers=cabeceras, json=cuerpo, timeout=TIMEOUT_SEGUNDOS
+            respuesta = self._enviar(
+                metodo, destino, intento, headers=cabeceras, json=cuerpo, timeout=TIMEOUT_SEGUNDOS
             )
+            if respuesta is None:
+                continue
             renovar = False
             if respuesta.ok:
                 return respuesta.json() if respuesta.content else {}
@@ -173,6 +175,17 @@ class ClienteGraph:
             else:
                 _lanzar(respuesta, destino)
         raise SharePointError(f"Graph no respondió tras {MAX_INTENTOS} intentos: {destino}")
+
+    def _enviar(
+        self, metodo: str, destino: str, intento: int, **opciones
+    ) -> requests.Response | None:
+        """La petición, o None si la conexión se cortó (se espera y se reintenta)."""
+        try:
+            return self._sesion.request(metodo, destino, **opciones)
+        except (requests.ConnectionError, requests.Timeout) as error:
+            logger.warning("Conexión cortada con Graph (%s); se reintenta.", error)
+            time.sleep(min(2**intento, ESPERA_MAXIMA_SEGUNDOS))
+            return None
 
     def _get(self, url: str) -> dict:
         return self._pedir("GET", url)
@@ -258,9 +271,11 @@ class ClienteGraph:
         renovar = False
         for intento in range(MAX_INTENTOS):
             cabeceras = {"Authorization": f"Bearer {self._obtener_token(renovar)}"}
-            respuesta = self._sesion.put(
-                destino, headers=cabeceras, data=contenido, timeout=TIMEOUT_SEGUNDOS
+            respuesta = self._enviar(
+                "PUT", destino, intento, headers=cabeceras, data=contenido, timeout=TIMEOUT_SEGUNDOS
             )
+            if respuesta is None:
+                continue
             renovar = False
             if respuesta.ok:
                 return respuesta.json()
@@ -279,7 +294,11 @@ class ClienteGraph:
         renovar = False
         for intento in range(MAX_INTENTOS):
             cabeceras = {"Authorization": f"Bearer {self._obtener_token(renovar)}"}
-            respuesta = self._sesion.get(destino, headers=cabeceras, timeout=TIMEOUT_SEGUNDOS)
+            respuesta = self._enviar(
+                "GET", destino, intento, headers=cabeceras, timeout=TIMEOUT_SEGUNDOS
+            )
+            if respuesta is None:
+                continue
             renovar = False
             if respuesta.ok:
                 return respuesta.content
